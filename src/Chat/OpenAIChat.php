@@ -15,6 +15,7 @@ use OpenAI\Responses\Chat\CreateResponseFunctionCall;
 use OpenAI\Responses\Chat\CreateStreamedResponse;
 use OpenAI\Responses\Chat\CreateStreamedResponseFunctionCall;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Illuminate\Support\Facades\Log;
 
 use function getenv;
 
@@ -138,47 +139,68 @@ final class OpenAIChat
     /**
      * @param  Message[]  $messages
      */
+  /**
+     * @param Message[] $messages
+     */
     private function createStreamedResponse(array $messages): StreamedResponse
     {
         $openAiArgs = $this->getOpenAiArgs($messages);
 
         $stream = $this->client->chat()->createStreamed($openAiArgs);
         $response = new StreamedResponse();
-        //We need this to make the streaming works
-        //It may not work with Symfony: https://stackoverflow.com/questions/76362863/why-streamedresponse-from-symfony-6-is-sent-at-once
-        @ob_end_clean();
+
+        // Turn off output buffering
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+        ini_set('output_buffering', 'off');
 
         $response->setCallback(function () use ($stream): void {
             $arguments = '';
             $functionName = null;
-            /** @var CreateStreamedResponse $partialResponse */
+            $accumulatedResponse = '';
+
             foreach ($stream as $partialResponse) {
                 $responseFunctionCall = $partialResponse->choices[0]->delta->functionCall;
                 if ($responseFunctionCall instanceof CreateStreamedResponseFunctionCall) {
-                    if (! is_null($responseFunctionCall->name)) {
+                    if (!is_null($responseFunctionCall->name)) {
                         $functionName = $responseFunctionCall->name;
                     }
-                    if (! is_null($responseFunctionCall->arguments)) {
+                    if (!is_null($responseFunctionCall->arguments)) {
                         $arguments .= $responseFunctionCall->arguments;
                     }
                 }
-                // $functionName should be always set if finishReason is function_call
+
                 if ($partialResponse->choices[0]->finishReason === 'function_call' && $functionName) {
                     $this->callFunction($functionName, $arguments);
                 }
-                if (! is_null($partialResponse->choices[0]->finishReason)) {
+
+                if (!is_null($partialResponse->choices[0]->finishReason)) {
                     ob_start();
                     break;
                 }
-                if (! ($partialResponse->choices[0]->delta->content)) {
+
+                if (!$partialResponse->choices[0]->delta->content) {
                     continue;
                 }
-                echo $partialResponse->choices[0]->delta->content;
+                $content = $partialResponse->choices[0]->delta->content;
+                $jsonContent = json_encode(['content' => $partialResponse->choices[0]->delta->content]);
+                echo $jsonContent;
+                $accumulatedResponse .= $content;
+                // echo $partialResponse->choices[0]->delta->content;
             }
+            session(['streamedResponse' => $accumulatedResponse]);
         });
+
+        // Set necessary headers for streaming
+        $response->headers->set('Content-Type', 'application/json');
+        $response->headers->set('Cache-Control', 'no-cache, must-revalidate');
+        $response->headers->set('X-Accel-Buffering', 'no');
 
         return $response->send();
     }
+
+
 
     /**
      * @param  Message[]  $messages
@@ -204,12 +226,13 @@ final class OpenAIChat
         }
 
         if ($this->requiredFunction instanceof FunctionInfo) {
-            $openAiArgs['function_call'] =
-                ['name' => $this->requiredFunction->name];
+            $openAiArgs['function_call'] = ['name' => $this->requiredFunction->name];
         }
 
         return $openAiArgs;
     }
+
+
 
     /**
      * @throws \JsonException
