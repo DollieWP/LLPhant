@@ -1,5 +1,5 @@
 {
-    "name": "dolliewp/llphant",
+    "name": "theodo-group/llphant",
     "description": "LLPhant is a library to help you build Generative AI applications.",
     "keywords": ["php", "openai", "GPT-4", "api", "language", "LLM", "vectorstore"],
     "license": "MIT",
