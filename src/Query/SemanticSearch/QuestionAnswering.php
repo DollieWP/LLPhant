@@ -7,7 +7,7 @@ use LLPhant\Chat\OpenAIChat;
 use LLPhant\Embeddings\Document;
 use LLPhant\Embeddings\EmbeddingGenerator\EmbeddingGeneratorInterface;
 use LLPhant\Embeddings\VectorStores\VectorStoreBase;
-use Symfony\Component\HttpFoundation\StreamedResponse;
+use OpenAI\Responses\StreamResponse as OpenAIStreamResponse;
 
 class QuestionAnswering
 {
@@ -31,7 +31,7 @@ class QuestionAnswering
     /**
      * @param  array<string, string|int>|array<mixed[]>  $additionalArguments
      */
-    public function answerQuestionStream(string $question, int $k = 4, array $additionalArguments = []): string
+    public function answerQuestionStream(string $question, int $k = 4, array $additionalArguments = []): OpenAIStreamResponse
     {
         $systemMessage = $this->searchDocumentAndCreateSystemMessage($question, $k, $additionalArguments);
         $this->openAIChat->setSystemMessage($systemMessage);
@@ -43,7 +43,7 @@ class QuestionAnswering
      * @param  Message[]  $messages
      * @param  array<string, string|int>|array<mixed[]>  $additionalArguments
      */
-    public function answerQuestionFromChat(array $messages, int $k = 4, array $additionalArguments = []): StreamedResponse
+    public function answerQuestionFromChat(array $messages, int $k = 4, array $additionalArguments = []): OpenAIStreamResponse
     {
         // First we need to give the context to openAI with the good instructions
         $userQuestion = $messages[count($messages) - 1]->content;
@@ -69,7 +69,7 @@ class QuestionAnswering
 
         $context = '';
         foreach ($documents as $document) {
-            $context .= $document->content.' ';
+            $context .= $document->content . ' ';
         }
 
         return $this->getSystemMessage($context);
